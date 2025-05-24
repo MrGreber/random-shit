@@ -7,7 +7,7 @@
 #define FADE_FACTOR (255 / 256)
 #define WIDTH 800
 #define HEIGHT 800
-#define DT 0.005
+#define DT 0.01
 const f64 G = 1.0;
 
 typedef struct vec2 {
