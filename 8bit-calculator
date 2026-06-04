@@ -1,0 +1,173 @@
+/*
+
+A 8 bit calculator on the raspberry pi pico w connected to 5 buttons and 8 led to display the 8 bits of the resulting number:
+1. increament
+2. decreament
+3. addition
+4. subtract
+5. equal (gives the result)
+
+did that using memory mapped IO
+
+*/
+
+
+#include "defines.h"
+
+#define SIO 5
+
+#ifndef IO_BANK0_BASE
+#define IO_BANK0_BASE 0x40014000
+#endif
+
+#define PADS_BASE     0x4001C000
+
+#define GPIO_CTRL(n) (*(volatile u32 *)(IO_BANK0_BASE + 0x04 + (n) * 8))
+#define PAD(n)       (*(volatile u32 *)(PADS_BASE + 0x04 + (n) * 4))
+
+#define GPIO_OE_SET  (*(volatile u32 *)(0xD0000024))
+#define GPIO_OE_CLR  (*(volatile u32 *)(0xD0000028))
+#define GPIO_OUT_SET (*(volatile u32 *)(0xD0000014))
+#define GPIO_OUT_CLR (*(volatile u32 *)(0xD0000018))
+#define GPIO_IN      (*(volatile u32 *)(0xD0000004))
+
+#define PDE (1u << 2)
+#define PUE (1u << 3)
+#define INE (1u << 6)
+
+typedef struct led {
+    u8 pin : 7;
+    u8 state : 1;
+} led_t;
+
+typedef struct button {
+    u8 pin;
+} btn_t;
+
+inline led_t init_led(const u8 pin) {
+    GPIO_CTRL(pin) = SIO;
+    GPIO_OE_SET = (1u << pin);
+
+    return (led_t){ pin, 0 };
+}
+
+inline void set_led(led_t* led, const byte state) {
+    if (state) GPIO_OUT_SET = (1u << led->pin);
+    else GPIO_OUT_CLR = (1u << led->pin);
+
+    led->state = state;
+}
+
+inline btn_t init_button(const u8 pin) {
+    GPIO_CTRL(pin) = SIO;
+    PAD(pin) &= ~(PDE | PUE);
+    PAD(pin) |= (PUE | INE);
+    GPIO_OE_CLR = (1u << pin);
+
+    return (btn_t){ pin };
+}
+
+inline byte is_pressed(const btn_t* button) {
+    return !(GPIO_IN & (1u << button->pin));
+}
+
+#define INC_FLAG 1
+#define DEC_FLAG 2
+#define ZERO_FLAG 4
+#define ADD_FLAG 8
+#define SUB_FLAG 16
+#define EQ_FLAG 32
+
+#define ADD 1
+#define SUB 2
+#define LED_COUNT 8
+typedef struct display {
+    led_t leds[LED_COUNT];
+    i8 num;
+
+    u8 op;
+} display_t;
+
+display_t init_display(void) {
+    display_t display = { 0 };
+    for (u8 i = 0; i < LED_COUNT; i++) display.leds[i] = init_led(i);
+    return display;
+}
+inline void update_display(display_t* display) {
+    for (u8 i = 0; i < LED_COUNT; i++) set_led(&display->leds[i], display->num & (1 << i));
+}
+
+int main(void) {
+    // GPIO0 button
+    btn_t dec = init_button(28);
+    btn_t inc = init_button(27);
+    btn_t add = init_button(26);
+    btn_t sub = init_button(22);
+    btn_t eq = init_button(21);
+
+
+    // GPIO1 LED
+    display_t display = init_display();
+
+    i8 sum = 0;
+    byte press_flag = 0;
+    while (1) {
+        if (is_pressed(&inc)) {
+            if (!(press_flag & INC_FLAG)) {
+                display.num++;
+                press_flag |= INC_FLAG;
+            }
+        } else press_flag &= ~INC_FLAG;
+
+        if (is_pressed(&dec)) {
+            if (!(press_flag & DEC_FLAG)) {
+                display.num--;
+                press_flag |= DEC_FLAG;
+            }
+        } else press_flag &= ~DEC_FLAG;
+
+        if (is_pressed(&inc) && is_pressed(&dec)) {
+            if (!(press_flag & ZERO_FLAG)) {
+                sum = 0;
+                display.op = 0;
+                display.num = 0;
+                press_flag |= ZERO_FLAG;
+            }
+        }
+        else press_flag &= ~ZERO_FLAG;
+
+
+        if (is_pressed(&add)) {
+            if (!(press_flag & ADD_FLAG)) {
+                display.op = ADD;
+                sum = display.num;
+                display.num = 0;
+                press_flag |= ADD_FLAG;
+            }
+        }
+        else press_flag &= ~ADD_FLAG;
+
+        if (is_pressed(&sub)) {
+            if (!(press_flag & SUB_FLAG)) {
+                display.op = SUB;
+                sum = display.num;
+                display.num = 0;
+                press_flag |= SUB_FLAG;
+            }
+        }
+        else press_flag &= ~SUB_FLAG;
+
+        if (is_pressed(&eq)) {
+            if (!(press_flag & EQ_FLAG)) {
+                if (display.op == ADD) sum += display.num;
+                if (display.op == SUB) sum -= display.num;
+                display.num = sum;
+                display.op = 0;
+                press_flag |= EQ_FLAG;
+            }
+        }
+        else press_flag &= ~EQ_FLAG;
+
+        update_display(&display);
+    }
+}
