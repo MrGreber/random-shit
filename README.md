@@ -3,3 +3,4 @@
 <br>Random things I programmed for fun like simulation or what not.
 <br><sub>1. Three body problem simulation (figure-8)</sub>
 <br><sub>2. generates a binaural beats audio file</sub>
+<br><sub>3. 8 bit calculator on raspberry pi pico w with memory mapped I/O</sub>
